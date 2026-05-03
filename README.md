@@ -27,8 +27,6 @@ pip install -r requirements.txt
 python app.py
 ```
 
-The app runs on **http://localhost:5000**
-
 ## Routes
 
 | URL | Description |
