@@ -27,6 +27,8 @@ pip install -r requirements.txt
 python app.py
 ```
 
+** App link: https://nitj-campus-tour-cart-management-system.onrender.com/ **
+
 ## Routes
 
 | URL | Description |
