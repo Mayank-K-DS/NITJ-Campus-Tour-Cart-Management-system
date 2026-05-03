@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Driver Portal · NIT-J E-Rickshaw</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+:root {
+  --bg:#0a0e14; --surface:#111620; --surface2:#1a2030; --border:#222d40;
+  --accent:#00e5a0; --accent2:#00b8ff; --warn:#ff6b35; --danger:#ff4757;
+  --text:#e8f0fe; --muted:#6b7a99; --card-shadow:0 4px 24px rgba(0,0,0,.5);
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;}
+header{
+  position:fixed;top:0;left:0;right:0;z-index:1000;
+  background:rgba(10,14,20,.92);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 24px;height:56px;
+}
+.logo{font-family:'Space Mono',monospace;font-size:13px;color:var(--accent);letter-spacing:2px;text-transform:uppercase;}
+.logo span{color:var(--muted);}
+.nav-link{font-size:13px;color:var(--muted);text-decoration:none;padding:6px 14px;border:1px solid var(--border);border-radius:6px;transition:all .2s;}
+.nav-link:hover{color:var(--text);border-color:var(--accent);}
+
+/* AUTH SCREEN */
+#auth-screen{
+  position:fixed;inset:0;z-index:900;
+  background:var(--bg);display:flex;align-items:center;justify-content:center;
+  padding:56px 20px 20px;
+}
+.auth-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:16px;
+  padding:32px;width:100%;max-width:420px;box-shadow:var(--card-shadow);
+}
+.auth-tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:24px;}
+.auth-tab{flex:1;padding:10px;text-align:center;font-size:14px;font-weight:500;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;transition:all .2s;}
+.auth-tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+.auth-title{font-size:20px;font-weight:600;margin-bottom:6px;}
+.auth-sub{font-size:12px;color:var(--muted);margin-bottom:24px;}
+.field{margin-bottom:16px;}
+.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;}
+.field input,.field select{
+  width:100%;padding:10px 14px;background:var(--surface2);border:1px solid var(--border);
+  border-radius:8px;color:var(--text);font-size:14px;font-family:'DM Sans',sans-serif;
+  outline:none;transition:border-color .2s;
+}
+.field input:focus,.field select:focus{border-color:var(--accent);}
+.field select option{background:var(--surface2);}
+.btn-primary{
+  width:100%;padding:12px;background:var(--accent);color:#000;border:none;
+  border-radius:8px;font-weight:600;font-size:14px;cursor:pointer;
+  font-family:'DM Sans',sans-serif;transition:all .2s;
+}
+.btn-primary:hover{background:#00ffb3;}
+.auth-error{color:var(--warn);font-size:12px;margin-top:12px;text-align:center;min-height:16px;}
+
+/* DRIVER DASHBOARD */
+#dashboard{display:none;padding-top:56px;height:100vh;overflow:hidden;}
+.dash-grid{display:grid;grid-template-columns:340px 1fr;height:100%;}
+
+/* CONTROL PANEL */
+.ctrl{
+  background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;overflow-y:auto;
+}
+.ctrl::-webkit-scrollbar{width:4px;}
+.ctrl::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+
+.driver-info{
+  padding:20px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:14px;
+}
+.avatar{
+  width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;color:#000;flex-shrink:0;
+}
+.di-name{font-weight:600;font-size:15px;}
+.di-emp{font-size:11px;color:var(--muted);font-family:'Space Mono',monospace;}
+.btn-logout{margin-left:auto;padding:5px 12px;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;cursor:pointer;transition:all .2s;}
+.btn-logout:hover{border-color:var(--danger);color:var(--danger);}
+
+/* ONLINE/OFFLINE TOGGLE */
+.online-section{padding:20px;border-bottom:1px solid var(--border);}
+.online-section h3{font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:14px;}
+.cart-select{margin-bottom:14px;}
+.status-toggle{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;
+}
+.st-label{font-size:13px;}
+.st-status{font-size:12px;color:var(--muted);}
+.toggle-btn{
+  padding:7px 18px;border:none;border-radius:7px;font-weight:600;font-size:12px;cursor:pointer;
+  font-family:'DM Sans',sans-serif;transition:all .2s;
+}
+.toggle-btn.go{background:var(--accent);color:#000;}
+.toggle-btn.go:hover{background:#00ffb3;}
+.toggle-btn.stop{background:rgba(255,71,87,.15);border:1px solid var(--danger);color:var(--danger);}
+.toggle-btn.stop:hover{background:var(--danger);color:#fff;}
+
+/* CONTROLS */
+.controls-section{padding:20px;border-bottom:1px solid var(--border);}
+.controls-section h3{font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:14px;}
+.ctrl-btn{
+  width:100%;padding:11px;border-radius:8px;border:1px solid var(--border);
+  background:var(--surface2);color:var(--text);font-size:13px;font-weight:500;
+  cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .2s;margin-bottom:10px;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.ctrl-btn:hover{border-color:var(--accent);color:var(--accent);}
+.ctrl-btn.active{background:rgba(255,107,53,.1);border-color:var(--warn);color:var(--warn);}
+.ctrl-btn:disabled{opacity:.4;cursor:not-allowed;}
+
+/* INCOMING CALL */
+.call-section{padding:20px;}
+.call-section h3{font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:14px;}
+.no-call{text-align:center;padding:20px;color:var(--muted);font-size:13px;}
+
+.incoming-call{
+  background:rgba(0,229,160,.05);border:1px solid var(--accent);
+  border-radius:12px;padding:16px;animation:glow 2s infinite;display:none;
+}
+@keyframes glow{0%,100%{box-shadow:0 0 12px rgba(0,229,160,.2)}50%{box-shadow:0 0 28px rgba(0,229,160,.5)}}
+.ic-title{font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;}
+.ic-dist{font-family:'Space Mono',monospace;font-size:24px;font-weight:700;color:var(--text);margin-bottom:4px;}
+.ic-sub{font-size:12px;color:var(--muted);margin-bottom:14px;}
+.ic-map-btn{
+  width:100%;padding:9px;background:transparent;border:1px solid var(--accent2);
+  color:var(--accent2);border-radius:8px;cursor:pointer;font-size:13px;
+  transition:all .2s;margin-bottom:8px;
+}
+.ic-map-btn:hover{background:var(--accent2);color:#000;}
+.btn-pickup{
+  width:100%;padding:11px;background:var(--accent);color:#000;border:none;
+  border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;
+  font-family:'DM Sans',sans-serif;transition:all .2s;
+}
+.btn-pickup:hover{background:#00ffb3;}
+
+/* MAP */
+#driver-map{width:100%;height:100%;}
+.leaflet-tile-pane{filter:brightness(.8) saturate(.7) hue-rotate(180deg) invert(1);}
+
+/* TOAST */
+.toast{
+  position:fixed;top:68px;right:20px;z-index:3000;
+  background:var(--surface2);border:1px solid var(--border);border-radius:10px;
+  padding:12px 16px;font-size:13px;max-width:280px;
+  box-shadow:var(--card-shadow);opacity:0;transform:translateY(-10px);
+  transition:all .3s;pointer-events:none;
+}
+.toast.show{opacity:1;transform:translateY(0);}
+.toast.success{border-color:var(--accent);}
+.toast.error{border-color:var(--warn);}
+
+@media(max-width:768px){
+  .dash-grid{grid-template-columns:1fr;grid-template-rows:auto 1fr;}
+  .ctrl{max-height:55vh;border-right:none;border-bottom:1px solid var(--border);}
+  #driver-map{height:45vh;}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">NIT-J <span>/ Driver Portal</span></div>
+  <a href="/user" class="nav-link">← User View</a>
+</header>
+
+<!-- AUTH -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-tabs">
+      <div class="auth-tab active" onclick="switchTab('login')">Login</div>
+      <div class="auth-tab" onclick="switchTab('register')">Register</div>
+    </div>
+
+    <!-- LOGIN -->
+    <div id="tab-login">
+      <div class="auth-title">Welcome Back</div>
+      <div class="auth-sub">Sign in with your Employee ID</div>
+      <div class="field"><label>Employee ID</label><input id="l-empid" placeholder="e.g. EMP001"/></div>
+      <div class="field"><label>Password</label><input id="l-pw" type="password" placeholder="Your password" onkeydown="if(event.key==='Enter')doLogin()"/></div>
+      <button class="btn-primary" onclick="doLogin()">Login</button>
+    </div>
+
+    <!-- REGISTER -->
+    <div id="tab-register" style="display:none">
+      <div class="auth-title">Create Account</div>
+      <div class="auth-sub">Register as a campus e-rickshaw driver</div>
+      <div class="field"><label>Employee ID</label><input id="r-empid" placeholder="e.g. EMP001"/></div>
+      <div class="field"><label>Full Name</label><input id="r-name" placeholder="Your full name"/></div>
+      <div class="field"><label>Phone Number</label><input id="r-phone" placeholder="10-digit mobile number"/></div>
+      <div class="field"><label>Password</label><input id="r-pw" type="password" placeholder="Create a password"/></div>
+      <button class="btn-primary" onclick="doRegister()">Create Account</button>
+    </div>
+
+    <div class="auth-error" id="auth-error"></div>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard">
+  <div class="dash-grid">
+    <div class="ctrl">
+      <!-- Driver Info -->
+      <div class="driver-info">
+        <div class="avatar" id="d-avatar">MK</div>
+        <div>
+          <div class="di-name" id="d-name">—</div>
+          <div class="di-emp" id="d-emp">—</div>
+        </div>
+        <button class="btn-logout" onclick="doLogout()">Logout</button>
+      </div>
+
+      <!-- Online Section -->
+      <div class="online-section">
+        <h3>Status</h3>
+        <div class="cart-select field" id="cart-select-wrap">
+          <label>Select Your Cart</label>
+          <select id="cart-select"><option value="">— Choose Cart —</option></select>
+        </div>
+        <div class="status-toggle">
+          <div>
+            <div class="st-label" id="st-label">Go Online</div>
+            <div class="st-status" id="st-status">You are offline</div>
+          </div>
+          <button class="toggle-btn go" id="toggle-btn" onclick="toggleOnline()">Go Online</button>
+        </div>
+      </div>
+
+      <!-- Controls (shown when online) -->
+      <div class="controls-section" id="controls-section" style="display:none">
+        <h3>Controls</h3>
+        <button class="ctrl-btn" id="btn-full" onclick="toggleFull()">
+          <span id="full-icon">🟢</span> <span id="full-text">Mark Cart as Full</span>
+        </button>
+      </div>
+
+      <!-- Incoming Call -->
+      <div class="call-section">
+        <h3>Passenger Call</h3>
+        <div class="no-call" id="no-call">No active calls. You're all clear.</div>
+        <div class="incoming-call" id="incoming-call">
+          <div class="ic-title">🔔 Passenger Nearby</div>
+          <div class="ic-dist" id="ic-dist">—</div>
+          <div class="ic-sub" id="ic-sub">Distance · ETA</div>
+          <button class="ic-map-btn" onclick="showUserOnMap()">📍 See on Map</button>
+          <button class="btn-pickup" onclick="doPickedUp()">✅ Picked Up</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Map -->
+    <div id="driver-map"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const socket = io();
+let token = null, empId = null, driverName = null;
+let map, myMarker, userCallMarker;
+let isOnline = false, isFull = false;
+let currentCall = null; // {call_id, lat, lng}
+let locationWatcher = null;
+let myLat = null, myLng = null;
+
+// ─── TAB SWITCH ──────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.auth-tab').forEach((t,i) => t.classList.toggle('active', (tab==='login'?i===0:i===1)));
+  document.getElementById('tab-login').style.display = tab==='login' ? '' : 'none';
+  document.getElementById('tab-register').style.display = tab==='register' ? '' : 'none';
+  document.getElementById('auth-error').textContent = '';
+}
+
+// ─── AUTH ────────────────────────────────────────────────────────────────────
+function setErr(msg) { document.getElementById('auth-error').textContent = msg; }
+
+function doRegister() {
+  const body = {
+    emp_id: document.getElementById('r-empid').value.trim(),
+    name: document.getElementById('r-name').value.trim(),
+    phone: document.getElementById('r-phone').value.trim(),
+    password: document.getElementById('r-pw').value,
+  };
+  if (!body.emp_id || !body.name || !body.phone || !body.password) { setErr('All fields required'); return; }
+  fetch('/api/driver/register', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
+    .then(r=>r.json()).then(d => {
+      if (!d.ok) { setErr(d.msg); return; }
+      showToast('Registered! Please login.', 'success');
+      switchTab('login');
+    });
+}
+
+function doLogin() {
+  const body = { emp_id: document.getElementById('l-empid').value.trim(), password: document.getElementById('l-pw').value };
+  if (!body.emp_id || !body.password) { setErr('All fields required'); return; }
+  fetch('/api/driver/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
+    .then(r=>r.json()).then(d => {
+      if (!d.ok) { setErr(d.msg); return; }
+      token = d.token; empId = d.emp_id; driverName = d.name;
+      localStorage.setItem('driver_token', token);
+      localStorage.setItem('driver_emp', empId);
+      localStorage.setItem('driver_name', driverName);
+      showDashboard();
+    });
+}
+
+function doLogout() {
+  fetch('/api/driver/logout', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token}) });
+  stopTracking();
+  token = null; empId = null;
+  localStorage.removeItem('driver_token');
+  localStorage.removeItem('driver_emp');
+  localStorage.removeItem('driver_name');
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('auth-screen').style.display = 'flex';
+}
+
+// Persist login
+window.addEventListener('load', () => {
+  const t = localStorage.getItem('driver_token');
+  if (t) {
+    token = t; empId = localStorage.getItem('driver_emp'); driverName = localStorage.getItem('driver_name');
+    showDashboard();
+  }
+});
+
+// ─── DASHBOARD ───────────────────────────────────────────────────────────────
+function showDashboard() {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  const initials = driverName.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  document.getElementById('d-avatar').textContent = initials;
+  document.getElementById('d-name').textContent = driverName;
+  document.getElementById('d-emp').textContent = empId;
+  initMap();
+  loadCarts();
+  listenForCalls();
+}
+
+function initMap() {
+  if (map) return;
+  map = L.map('driver-map', { zoomControl:false }).setView([31.3950, 75.5300], 16);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(map);
+  L.control.zoom({ position:'bottomright' }).addTo(map);
+}
+
+function loadCarts() {
+  fetch('/api/carts').then(r=>r.json()).then(d => {
+    const sel = document.getElementById('cart-select');
+    sel.innerHTML = '<option value="">— Choose Cart —</option>';
+    d.carts.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c; opt.textContent = c;
+      if (d.occupied.includes(c)) { opt.textContent += ' (in use)'; opt.disabled = true; }
+      sel.appendChild(opt);
+    });
+  });
+}
+
+// ─── ONLINE TOGGLE ───────────────────────────────────────────────────────────
+function toggleOnline() {
+  if (!isOnline) {
+    const cart = document.getElementById('cart-select').value;
+    if (!cart) { showToast('Please select your cart first', 'error'); return; }
+    if (!navigator.geolocation) { showToast('Geolocation not supported', 'error'); return; }
+    navigator.geolocation.getCurrentPosition(pos => {
+      myLat = pos.coords.latitude; myLng = pos.coords.longitude;
+      fetch('/api/driver/go_online', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ token, cart_no: cart, lat: myLat, lng: myLng })
+      }).then(r=>r.json()).then(d => {
+        if (!d.ok) { showToast(d.msg, 'error'); return; }
+        isOnline = true;
+        setOnlineUI(true, cart);
+        startTracking();
+        placeMyMarker(myLat, myLng);
+      });
+    }, () => { showToast('Location permission required to go online', 'error'); });
+  } else {
+    fetch('/api/driver/go_offline', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token}) });
+    isOnline = false; isFull = false;
+    setOnlineUI(false);
+    stopTracking();
+    if (myMarker) { map.removeLayer(myMarker); myMarker = null; }
+  }
+}
+
+function setOnlineUI(online, cart='') {
+  const btn = document.getElementById('toggle-btn');
+  document.getElementById('st-label').textContent = online ? `Online · ${cart}` : 'Go Online';
+  document.getElementById('st-status').textContent = online ? '🟢 Visible to passengers' : 'You are offline';
+  document.getElementById('cart-select-wrap').style.display = online ? 'none' : '';
+  btn.className = `toggle-btn ${online ? 'stop' : 'go'}`;
+  btn.textContent = online ? 'Go Offline' : 'Go Online';
+  document.getElementById('controls-section').style.display = online ? '' : 'none';
+}
+
+// ─── TRACKING ────────────────────────────────────────────────────────────────
+function startTracking() {
+  if (locationWatcher) return;
+  locationWatcher = navigator.geolocation.watchPosition(pos => {
+    myLat = pos.coords.latitude; myLng = pos.coords.longitude;
+    placeMyMarker(myLat, myLng);
+    fetch('/api/driver/update_location', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ token, lat: myLat, lng: myLng })
+    });
+  }, null, { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 });
+}
+
+function stopTracking() {
+  if (locationWatcher) { navigator.geolocation.clearWatch(locationWatcher); locationWatcher = null; }
+}
+
+function placeMyMarker(lat, lng) {
+  const icon = L.divIcon({
+    html:`<div style="background:#00e5a0;width:18px;height:18px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 4px rgba(0,229,160,.3)"></div>`,
+    className:'', iconSize:[18,18], iconAnchor:[9,9]
+  });
+  if (!myMarker) {
+    myMarker = L.marker([lat, lng], { icon, zIndexOffset:1000 }).addTo(map).bindPopup('You (Driver)');
+    map.setView([lat, lng], 17);
+  } else {
+    myMarker.setLatLng([lat, lng]);
+  }
+}
+
+// ─── CART FULL ────────────────────────────────────────────────────────────────
+function toggleFull() {
+  isFull = !isFull;
+  fetch('/api/driver/set_full', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token, is_full: isFull}) });
+  document.getElementById('full-icon').textContent = isFull ? '🔴' : '🟢';
+  document.getElementById('full-text').textContent = isFull ? 'Cart is Full (tap to unmark)' : 'Mark Cart as Full';
+  document.getElementById('btn-full').classList.toggle('active', isFull);
+  showToast(isFull ? 'Cart marked as full — hidden from users' : 'Cart available again', isFull ? 'error' : 'success');
+}
+
+// ─── CALL HANDLING ────────────────────────────────────────────────────────────
+function listenForCalls() {
+  socket.on(`new_call_${empId}`, data => {
+    currentCall = { call_id: data.call_id, lat: data.lat, lng: data.lng };
+    showIncomingCall(data);
+    showToast('🔔 Passenger called your cart!', 'success');
+  });
+}
+
+function showIncomingCall(data) {
+  document.getElementById('no-call').style.display = 'none';
+  const el = document.getElementById('incoming-call');
+  el.style.display = 'block';
+  document.getElementById('ic-dist').textContent = `${data.dist}m away`;
+  document.getElementById('ic-sub').textContent = `ETA: ${data.eta} min`;
+}
+
+function showUserOnMap() {
+  if (!currentCall) return;
+  if (userCallMarker) map.removeLayer(userCallMarker);
+  const icon = L.divIcon({
+    html:`<div style="background:#00b8ff;width:16px;height:16px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 5px rgba(0,184,255,.3);animation:none"></div>`,
+    className:'', iconSize:[16,16], iconAnchor:[8,8]
+  });
+  userCallMarker = L.marker([currentCall.lat, currentCall.lng], { icon })
+    .addTo(map).bindPopup('Passenger location').openPopup();
+  map.flyTo([currentCall.lat, currentCall.lng], 17, { duration:1 });
+}
+
+function doPickedUp() {
+  if (!currentCall) return;
+  fetch('/api/driver/picked_up', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ token, call_id: currentCall.call_id })
+  }).then(r=>r.json()).then(d => {
+    currentCall = null;
+    document.getElementById('incoming-call').style.display = 'none';
+    document.getElementById('no-call').style.display = 'block';
+    if (userCallMarker) { map.removeLayer(userCallMarker); userCallMarker = null; }
+    showToast('Passenger picked up! 🎉', 'success');
+  });
+}
+
+// ─── TOAST ───────────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, type='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = `toast show ${type}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+socket.on('connect', () => {
+  if (empId) listenForCalls();
+});
+</script>
+</body>
+</html>
