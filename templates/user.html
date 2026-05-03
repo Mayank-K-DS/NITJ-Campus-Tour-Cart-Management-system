@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NIT Jalandhar · Campus E-Rickshaw</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+:root {
+  --bg: #0a0e14;
+  --surface: #111620;
+  --surface2: #1a2030;
+  --border: #222d40;
+  --accent: #00e5a0;
+  --accent2: #00b8ff;
+  --warn: #ff6b35;
+  --text: #e8f0fe;
+  --muted: #6b7a99;
+  --card-shadow: 0 4px 24px rgba(0,0,0,0.5);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font-family:'DM Sans',sans-serif; min-height:100vh; overflow-x:hidden; }
+
+/* HEADER */
+header {
+  position:fixed; top:0; left:0; right:0; z-index:1000;
+  background:rgba(10,14,20,0.92); backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between;
+  padding:0 24px; height:56px;
+}
+.logo { font-family:'Space Mono',monospace; font-size:13px; color:var(--accent); letter-spacing:2px; text-transform:uppercase; }
+.logo span { color:var(--muted); }
+.nav-link { font-size:13px; color:var(--muted); text-decoration:none; padding:6px 14px; border:1px solid var(--border); border-radius:6px; transition:all .2s; }
+.nav-link:hover { color:var(--text); border-color:var(--accent); }
+
+/* MAIN LAYOUT */
+.main { display:grid; grid-template-columns:360px 1fr; height:100vh; padding-top:56px; }
+
+/* SIDEBAR */
+.sidebar {
+  background:var(--surface); border-right:1px solid var(--border);
+  display:flex; flex-direction:column; overflow:hidden;
+}
+.sidebar-header {
+  padding:20px 20px 16px; border-bottom:1px solid var(--border);
+}
+.sidebar-header h2 { font-size:16px; font-weight:600; margin-bottom:4px; }
+.sidebar-header p { font-size:12px; color:var(--muted); }
+.status-bar {
+  display:flex; align-items:center; gap:8px;
+  padding:10px 20px; background:var(--surface2); border-bottom:1px solid var(--border);
+  font-size:12px; color:var(--muted);
+}
+.dot { width:8px; height:8px; border-radius:50%; background:var(--accent); animation:pulse 2s infinite; flex-shrink:0; }
+.dot.off { background:var(--warn); animation:none; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+.driver-list { flex:1; overflow-y:auto; padding:12px; }
+.driver-list::-webkit-scrollbar { width:4px; }
+.driver-list::-webkit-scrollbar-track { background:transparent; }
+.driver-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+.driver-card {
+  background:var(--surface2); border:1px solid var(--border);
+  border-radius:12px; padding:14px; margin-bottom:10px;
+  cursor:pointer; transition:all .2s; position:relative; overflow:hidden;
+}
+.driver-card::before {
+  content:''; position:absolute; left:0; top:0; bottom:0; width:3px;
+  background:var(--accent); border-radius:3px 0 0 3px;
+}
+.driver-card:hover { border-color:var(--accent); transform:translateX(3px); }
+.driver-card.busy::before { background:var(--warn); }
+.driver-card.busy { opacity:.6; cursor:default; }
+
+.dc-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; }
+.dc-name { font-weight:600; font-size:14px; }
+.dc-cart { font-family:'Space Mono',monospace; font-size:11px; color:var(--accent); background:rgba(0,229,160,.1); padding:2px 8px; border-radius:4px; }
+.dc-info { font-size:12px; color:var(--muted); margin-bottom:10px; }
+.dc-eta { font-size:11px; color:var(--accent2); margin-bottom:10px; }
+.dc-eta span { font-family:'Space Mono',monospace; font-weight:700; font-size:14px; color:var(--text); }
+
+.btn-call {
+  width:100%; padding:9px; border:none; border-radius:8px;
+  background:var(--accent); color:#000; font-weight:600; font-size:13px;
+  cursor:pointer; transition:all .2s; font-family:'DM Sans',sans-serif;
+}
+.btn-call:hover { background:#00ffb3; transform:scale(1.02); }
+.btn-call:disabled { background:var(--border); color:var(--muted); cursor:not-allowed; transform:none; }
+
+.empty-state { text-align:center; padding:40px 20px; color:var(--muted); }
+.empty-state .icon { font-size:40px; margin-bottom:12px; }
+.empty-state p { font-size:13px; line-height:1.6; }
+
+/* CALL ACTIVE PANEL */
+.call-panel {
+  position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+  background:var(--surface); border:1px solid var(--accent);
+  border-radius:16px; padding:20px 28px; z-index:2000;
+  box-shadow:0 0 40px rgba(0,229,160,.2), var(--card-shadow);
+  min-width:320px; text-align:center; display:none;
+  animation:slideUp .3s ease;
+}
+@keyframes slideUp { from{transform:translateX(-50%) translateY(20px);opacity:0} to{transform:translateX(-50%) translateY(0);opacity:1} }
+.call-panel.active { display:block; }
+.cp-title { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:2px; margin-bottom:8px; }
+.cp-driver { font-size:18px; font-weight:600; margin-bottom:4px; }
+.cp-cart { font-family:'Space Mono',monospace; font-size:12px; color:var(--accent); margin-bottom:12px; }
+.cp-eta-row { display:flex; align-items:baseline; justify-content:center; gap:4px; margin-bottom:16px; }
+.cp-eta-num { font-family:'Space Mono',monospace; font-size:36px; font-weight:700; color:var(--accent); line-height:1; }
+.cp-eta-unit { font-size:12px; color:var(--muted); }
+.cp-dist { font-size:12px; color:var(--muted); margin-bottom:16px; }
+.btn-cancel { padding:8px 24px; background:transparent; border:1px solid var(--warn); color:var(--warn); border-radius:8px; cursor:pointer; font-size:13px; transition:all .2s; }
+.btn-cancel:hover { background:var(--warn); color:#fff; }
+.cp-arrived { font-size:16px; font-weight:600; color:var(--accent); display:none; }
+
+/* MAP */
+#map { width:100%; height:100%; }
+.leaflet-tile-pane { filter:brightness(.8) saturate(.7) hue-rotate(180deg) invert(1); }
+
+/* MY LOCATION PROMPT */
+.loc-banner {
+  background:rgba(0,184,255,.1); border:1px solid rgba(0,184,255,.3);
+  border-radius:10px; padding:12px 16px; margin:12px;
+  font-size:12px; color:var(--accent2); display:flex; align-items:center; gap:10px;
+}
+.loc-banner button { margin-left:auto; padding:4px 12px; background:var(--accent2); color:#000; border:none; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600; }
+
+/* TOAST */
+.toast {
+  position:fixed; top:68px; right:20px; z-index:3000;
+  background:var(--surface2); border:1px solid var(--border); border-radius:10px;
+  padding:12px 16px; font-size:13px; max-width:280px;
+  box-shadow:var(--card-shadow); opacity:0; transform:translateY(-10px);
+  transition:all .3s; pointer-events:none;
+}
+.toast.show { opacity:1; transform:translateY(0); }
+.toast.success { border-color:var(--accent); }
+.toast.error { border-color:var(--warn); }
+
+@media(max-width:768px){
+  .main { grid-template-columns:1fr; }
+  .sidebar { position:fixed; bottom:0; left:0; right:0; z-index:500; height:50vh; border-right:none; border-top:1px solid var(--border); }
+  #map { height:50vh; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">NIT-J <span>/ E-Rickshaw</span></div>
+  <a href="/driver" class="nav-link">Driver Portal →</a>
+</header>
+
+<div class="main">
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h2>Nearby Carts</h2>
+      <p>Tap a cart to call — no login needed</p>
+    </div>
+    <div class="status-bar">
+      <div class="dot" id="ws-dot"></div>
+      <span id="ws-status">Connecting…</span>
+    </div>
+    <div id="loc-banner" class="loc-banner" style="display:none">
+      📍 Share your location for accurate ETA
+      <button onclick="getLocation()">Allow</button>
+    </div>
+    <div class="driver-list" id="driver-list">
+      <div class="empty-state">
+        <div class="icon">🛺</div>
+        <p>No carts online right now.<br>Check back in a moment.</p>
+      </div>
+    </div>
+  </div>
+  <div id="map"></div>
+</div>
+
+<!-- Call Panel -->
+<div class="call-panel" id="call-panel">
+  <div class="cp-title">Cart En Route</div>
+  <div class="cp-driver" id="cp-driver">—</div>
+  <div class="cp-cart" id="cp-cart">—</div>
+  <div class="cp-eta-row">
+    <div class="cp-eta-num" id="cp-eta">—</div>
+    <div class="cp-eta-unit">min away</div>
+  </div>
+  <div class="cp-dist" id="cp-dist"></div>
+  <div class="cp-arrived" id="cp-arrived">🎉 Your cart has arrived!</div>
+  <button class="btn-cancel" id="btn-cancel" onclick="cancelCall()">Cancel</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const socket = io();
+let map, userMarker, userLat = null, userLng = null;
+let driverMarkers = {};
+let activeCall = null; // {call_id, driver_id, etaChannel}
+
+// ─── MAP INIT ────────────────────────────────────────────────────────────────
+map = L.map('map', { zoomControl:false }).setView([31.3950, 75.5300], 16);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution:'© OpenStreetMap', maxZoom:19
+}).addTo(map);
+L.control.zoom({ position:'bottomright' }).addTo(map);
+
+function makeDriverIcon(initials) {
+  return L.divIcon({
+    html:`<div style="background:#00e5a0;color:#000;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5)">${initials}</div>`,
+    className:'', iconSize:[36,36], iconAnchor:[18,18]
+  });
+}
+function makeUserIcon() {
+  return L.divIcon({
+    html:`<div style="background:#00b8ff;width:16px;height:16px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 4px rgba(0,184,255,.3)"></div>`,
+    className:'', iconSize:[16,16], iconAnchor:[8,8]
+  });
+}
+
+// ─── GEOLOCATION ─────────────────────────────────────────────────────────────
+function getLocation() {
+  if (!navigator.geolocation) { showToast('Geolocation not supported', 'error'); return; }
+  navigator.geolocation.getCurrentPosition(pos => {
+    userLat = pos.coords.latitude;
+    userLng = pos.coords.longitude;
+    document.getElementById('loc-banner').style.display = 'none';
+    if (!userMarker) {
+      userMarker = L.marker([userLat, userLng], { icon: makeUserIcon(), zIndexOffset:1000 })
+        .addTo(map).bindPopup('You are here');
+      map.setView([userLat, userLng], 17);
+    } else {
+      userMarker.setLatLng([userLat, userLng]);
+    }
+    renderDriverList(lastDrivers);
+  }, () => {
+    showToast('Location access denied', 'error');
+  });
+}
+
+// Auto-try location
+navigator.geolocation && navigator.geolocation.getCurrentPosition(pos => {
+  userLat = pos.coords.latitude; userLng = pos.coords.longitude;
+  userMarker = L.marker([userLat, userLng], { icon: makeUserIcon(), zIndexOffset:1000 })
+    .addTo(map).bindPopup('You are here');
+  map.setView([userLat, userLng], 17);
+}, () => {
+  document.getElementById('loc-banner').style.display = 'flex';
+  map.setView([31.3950, 75.5300], 16);
+});
+
+// ─── SOCKET ──────────────────────────────────────────────────────────────────
+let lastDrivers = [];
+socket.on('connect', () => {
+  document.getElementById('ws-dot').classList.remove('off');
+  document.getElementById('ws-status').textContent = 'Live updates active';
+  fetchDrivers();
+});
+socket.on('disconnect', () => {
+  document.getElementById('ws-dot').classList.add('off');
+  document.getElementById('ws-status').textContent = 'Reconnecting…';
+});
+socket.on('drivers_update', drivers => {
+  lastDrivers = drivers;
+  renderDriverList(drivers);
+  updateMapMarkers(drivers);
+});
+
+function fetchDrivers() {
+  fetch('/api/user/drivers').then(r=>r.json()).then(d => {
+    lastDrivers = d.drivers;
+    renderDriverList(d.drivers);
+    updateMapMarkers(d.drivers);
+  });
+}
+
+// ─── RENDER SIDEBAR ──────────────────────────────────────────────────────────
+function haversine(lat1,lon1,lat2,lon2) {
+  const R=6371000, phi1=lat1*Math.PI/180, phi2=lat2*Math.PI/180,
+        dp=(lat2-lat1)*Math.PI/180, dl=(lon2-lon1)*Math.PI/180;
+  const a=Math.sin(dp/2)**2+Math.cos(phi1)*Math.cos(phi2)*Math.sin(dl/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function eta(dist) { return (dist/1000/15*60).toFixed(1); }
+
+function renderDriverList(drivers) {
+  const el = document.getElementById('driver-list');
+  if (!drivers.length) {
+    el.innerHTML = `<div class="empty-state"><div class="icon">🛺</div><p>No carts online right now.<br>Check back in a moment.</p></div>`;
+    return;
+  }
+  // Sort by distance if user location known
+  let sorted = [...drivers];
+  if (userLat !== null) {
+    sorted.sort((a,b) => haversine(userLat,userLng,a.lat,a.lng) - haversine(userLat,userLng,b.lat,b.lng));
+  }
+  el.innerHTML = sorted.map(d => {
+    const busy = d.has_pending;
+    let distStr = '', etaStr = '';
+    if (userLat !== null) {
+      const dist = haversine(userLat, userLng, d.lat, d.lng);
+      distStr = dist < 1000 ? `${Math.round(dist)}m away` : `${(dist/1000).toFixed(1)}km away`;
+      etaStr = `<div class="dc-eta">ETA <span>${eta(dist)} min</span></div>`;
+    }
+    return `
+    <div class="driver-card ${busy ? 'busy' : ''}" onclick="focusDriver('${d.emp_id}')">
+      <div class="dc-top">
+        <div class="dc-name">${d.name}</div>
+        <div class="dc-cart">${d.cart_no}</div>
+      </div>
+      <div class="dc-info">📞 ${d.phone} ${distStr ? '· '+distStr : ''}</div>
+      ${etaStr}
+      <button class="btn-call" ${busy ? 'disabled' : ''} onclick="callDriver(event,'${d.emp_id}')">
+        ${busy ? '🔴 On Another Call' : '📞 Call This Cart'}
+      </button>
+    </div>`;
+  }).join('');
+}
+
+function focusDriver(empId) {
+  const d = lastDrivers.find(x => x.emp_id === empId);
+  if (d) map.flyTo([d.lat, d.lng], 17, { duration:1 });
+}
+
+// ─── MAP MARKERS ─────────────────────────────────────────────────────────────
+function updateMapMarkers(drivers) {
+  const ids = new Set(drivers.map(d => d.emp_id));
+  // Remove old
+  Object.keys(driverMarkers).forEach(id => {
+    if (!ids.has(id)) { map.removeLayer(driverMarkers[id]); delete driverMarkers[id]; }
+  });
+  drivers.forEach(d => {
+    const initials = d.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    if (driverMarkers[d.emp_id]) {
+      driverMarkers[d.emp_id].setLatLng([d.lat, d.lng]);
+    } else {
+      driverMarkers[d.emp_id] = L.marker([d.lat, d.lng], { icon: makeDriverIcon(initials) })
+        .addTo(map)
+        .bindPopup(`<b>${d.name}</b><br>${d.cart_no}<br>📞 ${d.phone}`);
+    }
+  });
+}
+
+// ─── CALL ────────────────────────────────────────────────────────────────────
+function callDriver(evt, empId) {
+  evt.stopPropagation();
+  if (activeCall) { showToast('You already have an active call', 'error'); return; }
+  if (userLat === null) {
+    showToast('Please share your location first', 'error');
+    document.getElementById('loc-banner').style.display = 'flex';
+    return;
+  }
+  fetch('/api/user/call', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ driver_id: empId, lat: userLat, lng: userLng })
+  }).then(r=>r.json()).then(data => {
+    if (!data.ok) { showToast(data.msg, 'error'); return; }
+    activeCall = { call_id: data.call_id, driver_id: empId };
+    showCallPanel(data);
+    // Listen for ETA updates
+    socket.on(`eta_update_${data.call_id}`, upd => {
+      document.getElementById('cp-eta').textContent = upd.eta;
+      document.getElementById('cp-dist').textContent = `${upd.dist}m distance`;
+    });
+    // Listen for pickup
+    socket.on(`call_picked_${data.call_id}`, () => {
+      document.getElementById('cp-arrived').style.display = 'block';
+      document.getElementById('btn-cancel').style.display = 'none';
+      setTimeout(() => { hideCallPanel(); activeCall = null; }, 4000);
+    });
+  });
+}
+
+function showCallPanel(data) {
+  document.getElementById('cp-driver').textContent = data.driver_name;
+  document.getElementById('cp-cart').textContent = data.cart_no;
+  document.getElementById('cp-eta').textContent = data.eta;
+  document.getElementById('cp-dist').textContent = `${data.dist}m distance`;
+  document.getElementById('call-panel').classList.add('active');
+}
+
+function hideCallPanel() {
+  document.getElementById('call-panel').classList.remove('active');
+  document.getElementById('cp-arrived').style.display = 'none';
+  document.getElementById('btn-cancel').style.display = 'inline-block';
+}
+
+function cancelCall() {
+  hideCallPanel();
+  if (activeCall) {
+    socket.off(`eta_update_${activeCall.call_id}`);
+    socket.off(`call_picked_${activeCall.call_id}`);
+    activeCall = null;
+  }
+}
+
+// ─── TOAST ───────────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, type='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast show ${type}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>
