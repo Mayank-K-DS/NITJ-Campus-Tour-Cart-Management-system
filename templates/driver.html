@@ -306,7 +306,10 @@ function doLogin() {
   if (!body.emp_id || !body.password) { setErr('All fields required'); return; }
   fetch('/api/driver/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
     .then(r=>r.json()).then(d => {
-      if (!d.ok) { setErr(d.msg); return; }
+      if (!d.ok) { setErr(d.msg || "Employee ID or Password do not match");
+      showToast("Invalid credentials ❌", "error");
+      return;
+      }
       token = d.token; empId = d.emp_id; driverName = d.name;
       localStorage.setItem('driver_token', token);
       localStorage.setItem('driver_emp', empId);
@@ -480,7 +483,11 @@ function doPickedUp() {
   fetch('/api/driver/picked_up', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ token, call_id: currentCall.call_id })
-  }).then(r=>r.json()).then(d => {
+    }).then(r=>r.json()).then(d => {
+    if (!d.ok) {
+        showToast(d.msg || "Too far to pick up", "error");
+        return;
+    }
     currentCall = null;
     document.getElementById('incoming-call').style.display = 'none';
     document.getElementById('no-call').style.display = 'block';
